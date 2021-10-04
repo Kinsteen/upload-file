@@ -26,6 +26,8 @@ const validTokens: Token[] = []
 const app = express();
 const port = 3000;
 
+let lastAttempt: number;
+
 app.use(express.urlencoded({"extended": true}))
 app.use(fileUpload())
 app.use((req, res, next) => {
@@ -42,24 +44,38 @@ app.use((req, res, next) => {
 })
 
 app.post('/login', (req, res) => {
-    const isValid = authenticator.check(req.body.totp, secret);
-    if (isValid) {
-        crypto.randomBytes(48, function(err, buffer) {
-            const token = buffer.toString('hex');
-            res.send(token)
-            validTokens.push({value: token, date: Date.now()})
-            logger.info('Successful login')
-        });
+    const a = async () => {
+        const sleep = (millis: number) => {
+            return new Promise(resolve => setTimeout(resolve, millis));
+        }
+
+        let delay = 1000 * 3; // 3s
+        if (Date.now() - lastAttempt < delay) {
+            logger.info('sleeping...')
+            await sleep(delay - (Date.now() - lastAttempt))
+        }
+
+        const isValid = authenticator.check(req.body.totp, secret);
+        if (isValid) {
+            crypto.randomBytes(48, function(err, buffer) {
+                const token = buffer.toString('hex');
+                res.send(token)
+                validTokens.push({value: token, date: Date.now()})
+                logger.info('Successful login with token ' + token)
+            });
+        }
+        else {
+            lastAttempt = Date.now()
+            res.send('not ok')
+            logger.error('Wrong login!')
+        }
     }
-    else {
-        res.send('not ok')
-        logger.error('Wrong login!')
-    }
+
+    a()
 });
 
 app.post('/upload', (req, res) => {
     const token = req.header("Token")
-
     const validToken = validTokens.find(element => element.value == token)
 
     if (validToken) {
@@ -77,6 +93,24 @@ app.post('/upload', (req, res) => {
     res.end()
 })
 
+app.get('/pull/:file', (req, res) => {
+    const token = req.header("Token")
+    const validToken = validTokens.find(element => element.value == token)
+
+    if (validToken) {
+        if (fs.existsSync('./public/' + req.params.file)) {
+            logger.info('file asked: ' + req.params.file)
+            res.sendFile('./public/' + req.params.file, {root: '.'})
+        } else {
+            logger.warn('Requested file ' + req.params.file + ', but wasn\'t found')
+            res.send('not found')
+        }
+    } else {
+        logger.error("Token invalid.")
+        res.send('invalid token')
+    }
+})
+
 app.get('/list', (req, res) => {
     const token = req.header("Token")
     const validToken = validTokens.find(element => element.value == token)
@@ -84,12 +118,12 @@ app.get('/list', (req, res) => {
     let result = ""
 
     if (validToken) {
-        console.log("Did ls.")
+        logger.info("Did ls.")
         fs.readdirSync("./public/").forEach(file => {
             result += file + "\n"
         });
     } else {
-        console.log("Token invalid.")
+        logger.error("Token invalid.")
         result = "invalid token"
     }
 
@@ -97,5 +131,5 @@ app.get('/list', (req, res) => {
 })
 
 app.listen(port, () => {
-  return console.log(`server is listening on ${port}`);
+  return logger.info(`server is listening on ${port}`);
 });
