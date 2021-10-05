@@ -2,15 +2,14 @@
 
 echo "Welcome"
 
-HTTP=http                # Can change to https
-HOST=upload.kinsteen.fr  # Hostname (ip or domain name)
-PORT=80                  # 80 for http, 443 for https
+HTTP=https                # Can change to https
+HOST=upload.kinsteen.fr   # Hostname (ip or domain name)
+PORT=443                  # 80 for http, 443 for https
 
 while true; do
     read -ep "> " -a action
 
     case "${action[0]}" in
-
     login)
         if [[ -z $TOKEN ]]; then
             res=$(curl -s -X POST -d "totp=${action[1]}" $HTTP://$HOST:$PORT/login)
