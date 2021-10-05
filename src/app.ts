@@ -28,7 +28,7 @@ const port = 3000;
 
 let lastAttempt: number;
 
-app.use(express.urlencoded({"extended": true}))
+app.use(express.urlencoded({ "extended": true }))
 app.use(fileUpload())
 app.use((req, res, next) => {
     for (let i = validTokens.length - 1; i >= 0; i--) {
@@ -36,42 +36,44 @@ app.use((req, res, next) => {
         const actualDate = new Date()
         const diff = actualDate.getTime() - oldDate.getTime()
 
-        if (diff >= 1000*60*3) { // 10 minutes
+        if (diff >= 1000*60*3) { // 3 minutes
             validTokens.splice(i, 1)
         }
     }
-    next();
+    next()
+})
+
+app.get('/', (req, res) => {
+    res.download('./shell/upload.sh', 'upload.sh')
+    logger.info('Someone downloaded the script')
 })
 
 app.post('/login', (req, res) => {
-    const a = async () => {
+    (async () => {
         const sleep = (millis: number) => {
-            return new Promise(resolve => setTimeout(resolve, millis));
+            return new Promise(resolve => setTimeout(resolve, millis))
         }
 
         let delay = 1000 * 3; // 3s
         if (Date.now() - lastAttempt < delay) {
             logger.info('sleeping...')
-            await sleep(delay - (Date.now() - lastAttempt))
+            await sleep(delay - (Date.now() - lastAttempt)) // Block the login function if there was an incorrect login before
         }
 
         const isValid = authenticator.check(req.body.totp, secret);
         if (isValid) {
             crypto.randomBytes(48, function(err, buffer) {
-                const token = buffer.toString('hex');
+                const token = buffer.toString('hex')
                 res.send(token)
                 validTokens.push({value: token, date: Date.now()})
-                logger.info('Successful login with token ' + token)
+                logger.info('Successful login')
             });
-        }
-        else {
+        } else {
             lastAttempt = Date.now()
             res.send('not ok')
             logger.error('Wrong login!')
         }
-    }
-
-    a()
+    })()
 });
 
 app.post('/upload', (req, res) => {
@@ -80,8 +82,8 @@ app.post('/upload', (req, res) => {
 
     if (validToken) {
         if (req.files) {
-            const data = req.files['data'] as fileUpload.UploadedFile;
-            const dest = 'public/' + data.name
+            const data = req.files['data'] as fileUpload.UploadedFile
+            const dest = 'public/' + data.name.replace('..', '')
             data.mv(dest)
             logger.info('Uploaded file to ' + dest)
         }
@@ -96,13 +98,14 @@ app.post('/upload', (req, res) => {
 app.get('/pull/:file', (req, res) => {
     const token = req.header("Token")
     const validToken = validTokens.find(element => element.value == token)
+    const file = req.params.file.replace('..', '')
 
     if (validToken) {
-        if (fs.existsSync('./public/' + req.params.file)) {
-            logger.info('file asked: ' + req.params.file)
-            res.sendFile('./public/' + req.params.file, {root: '.'})
+        if (fs.existsSync('./public/' + file)) {
+            logger.info('file asked: ' + file)
+            res.sendFile('./public/' + file, {root: '.'})
         } else {
-            logger.warn('Requested file ' + req.params.file + ', but wasn\'t found')
+            logger.warn(`Requested file ${file}, but wasn't found`)
             res.send('not found')
         }
     } else {
@@ -115,21 +118,19 @@ app.get('/list', (req, res) => {
     const token = req.header("Token")
     const validToken = validTokens.find(element => element.value == token)
 
-    let result = ""
-
     if (validToken) {
         logger.info("Did ls.")
+        let result = ""
         fs.readdirSync("./public/").forEach(file => {
             result += file + "\n"
         });
+        res.send(result)
     } else {
-        logger.error("Token invalid.")
-        result = "invalid token"
+        logger.error('Token invalid.')
+        res.send('invalid token')
     }
-
-    res.send(result)
 })
 
 app.listen(port, () => {
-  return logger.info(`server is listening on ${port}`);
+    return logger.info(`Server is listening on ${port}`)
 });
